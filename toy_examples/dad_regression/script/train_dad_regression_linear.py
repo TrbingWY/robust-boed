@@ -291,7 +291,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--method", default="dad", type=str
     )
-    # new method: mi.py 130 line; add the  Wasserstein dispersion penalty (relative to previous design points)
 
     args = parser.parse_args()
 
