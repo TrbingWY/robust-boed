@@ -163,11 +163,6 @@ def experiment(
                 best_x,_ = experiment.optimize_design(xis, ys, model)
             elif method.startswith("boed_lambda_"):
                 best_x,_ = experiment.optimize_design(xis, ys, model, float(method[len("boed_lambda_"):]))
-            elif method == "initial":
-                if round_idx ==1:
-                    best_x = torch.tensor([0.0])
-                else:
-                    best_x,_ = experiment.optimize_design(xis, ys, model)
 
             elif method == "random":
                 best_x = (torch.round(torch.rand((1)) * (8) / 0.1) * 0.1 - 4)
