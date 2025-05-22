@@ -78,7 +78,7 @@ def single_run(
                 # best_x = (torch.round(torch.rand((1, model.p)) * 8 / 0.1) * 0.1 - 4)[0]
             else:
                 best_x = (torch.round(torch.rand((1, model.p)) * 3 / 0.1) * 0.1 - 4)[0]
-        elif alg_method == "dad" or alg_method == "dad_new":
+        elif alg_method == "dad":
             ho_model = mlflow.pytorch.load_model(model_location)
             with torch.no_grad():
                 best_x = compute_design(f"xi{round_idx}", ho_model.design_net.lazy(*zip(xis, ys)))

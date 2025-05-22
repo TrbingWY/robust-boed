@@ -18,7 +18,6 @@ import sys, os
 from oed.primitives import observation_sample, latent_sample, compute_design
 from experiment_tools.pyro_tools import auto_seed
 from oed.design import OED
-from oed.design_toy import OED_toy
 from contrastive.mi import PriorContrastiveEstimation
 from neural.modules import (
     SetEquivariantDesignNetwork,
@@ -187,10 +186,7 @@ def train_dad(
         {"optimizer": torch.optim.Adam, "optim_args": {"lr": lr}, "gamma": gamma}
     )
     loss_fn = PriorContrastiveEstimation(num_outer_samples, num_inner_samples)
-    if method == "dad_new":
-        oed = OED_toy(model.model, scheduler, loss_fn,device = "cpu")
-    else:
-        oed = OED(model.model, scheduler, loss_fn,device="cpu")
+    oed = OED(model.model, scheduler, loss_fn,device="cpu")
 
     ### Set up Mlflow logging ### ------------------------------------------------------
     mlflow.set_experiment(mlflow_experiment_name)
