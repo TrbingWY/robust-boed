@@ -38,10 +38,7 @@ python3 toy_examples/dad_regression/script/fixedmodel/plotting.py
 
 ## Experiment: Location Finding
 
-To train a DAD network for location finding in the paper, the code is adapted from [https://github.com/ae-foster/dad](https://github.com/ae-foster/dad)
-
-
-The location_method have "boed", "random","dad", and "boed_new".
+The location_method have "boed", "random", and "boed_new".
 
 
 ```bash
@@ -58,6 +55,27 @@ python3 toy_examples/sources_mcmc_vi/scripts/main.py \
 To show the degree of covariate shift and generalization error
 
 ```bash
-python3 toy_examples/sources_mcmc_vi/script/plotting.py
+python3 toy_examples/sources_mcmc_vi/scripts/plotting.py
+```
+## Experiment: PK
+
+
+The pk_method have "boed", "random", and new method,like "db_boed_lambda_0.5_tau_2", the new method with lambda = 0.5 and tau =2.
+
+
+```bash
+python3 toy_examples/pk/scripts/main.py \
+    --pk_method "boed" \
+    --grids_num 200 \
+    --noise_scale 0.1 \
+    --num_experiments 30 \
+    --num_parallel 1 \
+    --misspecification_flag False
 ```
 
+
+To show the degree of covariate shift and generalization error
+
+```bash
+python3 toy_examples/pk/scripts/plotting.py
+```
