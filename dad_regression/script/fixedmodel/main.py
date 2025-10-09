@@ -1,23 +1,17 @@
 import torch
 from polynomial_model import PolynomialModel
 from boed_experiment import BOEDExperiment
-from utils import compute_wasserstein_dispersion,compute_covarite_shift,compute_mmd
-from plotting import plot_generalization_error_vs_round,plot_covariet_shift_vs_round,plot_rmse_vs_round
+from utils import compute_covarite_shift
+from plotting import plot_generalization_error_vs_round,plot_covariet_shift_vs_round
 import os,sys
 import matplotlib.pyplot as plt
 import pyro
-import pyro.distributions as dist
-from pyro.contrib.oed.eig import marginal_eig, nmc_eig
-from pyro.infer import SVI, Trace_ELBO
-from pyro.optim import Adam
-from pyro.infer import MCMC, NUTS
+
 import pandas as pd
 import gc
 import re
-import mlflow
 import mlflow.pytorch
-from oed.design import OED
-from oed.primitives import observation_sample, latent_sample, compute_design
+
 # from epig.epig_logprobs import epig_from_logprobs
 
 def test_phase(model, posterior_mean, posterior_sd, test_x,xis,ys, ax, round,misspecified_flag,PLOT):

@@ -21,31 +21,6 @@ a directory `mlruns` which will be created automatically. Each experiment is ass
 numerical `<ID>` and each run gets a unique `<HASH>`.
 
 ## Experiment: Toy Example
-To train a DAD network for toy example under well-specified model in the paper,
-
-```bash
-python3 toy_examples/dad_regression/script/train_dad_regression.py \
-    --method "dad" \
-    --num-steps 500 \
-    --num-inner-samples 100 \
-    --num-outer-samples 200 \
-    --seed -1 \
-    --mlflow-experiment-name "dad_regression" \
-    --num_experiments 10
-```
-
-To train a DAD network for toy example under mis-specified model in the paper,
-
-```bash
-python3 toy_examples/dad_regression/script/train_dad_regression_linear.py \
-    --method "dad" \
-    --num-steps 500 \
-    --num-inner-samples 100 \
-    --num-outer-samples 200 \
-    --seed -1 \
-    --mlflow-experiment-name "dad_regression_linear" \
-    --num_experiments 10
-```
 
 
 The method have "boed", "random","dad", and "boed_new".  and the expeiriment_id and run_id need to fill into the main.py
