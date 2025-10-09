@@ -6,6 +6,7 @@ from runner import single_run
 import pyro
 import torch
 import gc
+import sys
 
 
 def parse_args():
@@ -20,14 +21,12 @@ def parse_args():
     parser.add_argument("--lr", default=0.0001, type=float)
     parser.add_argument("--num_steps", default=100, type=int)
     parser.add_argument("--grids_num", default=200, type=int)
-    parser.add_argument("--location_method", default="boed_new_025", type=str)
+    parser.add_argument("--location_method", default="db_boed", type=str)
     parser.add_argument("--biased_sample_flag", default=False, type=bool)
     parser.add_argument("--num_parallel", default=1, type=int)
     parser.add_argument("--seed", default=44, type=int)
-    parser.add_argument("--dir",default= "../results/", type= str)
+    parser.add_argument("--dir",default= "../results/db_boed/tmp/", type= str)
     parser.add_argument("--misspecification_flag", type=str, default="True")
-    parser.add_argument("--experiment_id", type=str, default="True")
-    parser.add_argument("--run_id", type=str, default="True")
     
     return parser.parse_args()
 
@@ -62,12 +61,11 @@ def main():
 
     theta_list = load_true_theta("./true_thetas_500.txt")
 
-    model_location = f"./mlruns/{args.experiment_id}/{args.run_id}/artifacts/model"
 
     output = []
     # torch.use_deterministic_algorithms(True)
 
-    for theta_idx, true_theta in enumerate(theta_list[:100]):
+    for theta_idx, true_theta in enumerate(theta_list[1:100]):
         for run_id in range(args.num_parallel): 
             
             pyro.clear_param_store()
@@ -82,19 +80,20 @@ def main():
             print(f"=== Run ID {run_id} ===")
             print("true_theta:",true_theta)
 
+
             xis_all, run_mean, run_std, rmse_all, run_nll, generalization_error_all = single_run(
                 p=args.num_dim,
                 K=args.num_sources,
                 noise_scale=args.noise_scale,
                 num_candidates=args.grids_num,
                 eig_method="nmc_eig",
-                dir="../results/boed/",
+                # dir="../results/boed/",
+                dir = save_dir,
                 num_experiments=args.num_experiments,
                 alg_method=args.location_method,
                 true_theta=true_theta,
                 biased_sample_flag=args.biased_sample_flag,
-                misspecification_flag = args.misspecification_flag,
-                model_location= model_location,
+                misspecification_flag = args.misspecification_flag
             )
 
             output.append(pd.DataFrame({

@@ -271,8 +271,7 @@ if __name__=="__main__":
     # disp = compute_mmd_dispersion(subset)
     # print("Dispersion:", disp.item())
 
-    directory =  "./toy_examples/sources_mcmc_vi/results/source_final/empirical/"
-    directory = "./toy_examples/sources_mcmc_vi/results/source_final/newmethod/"
+    directory =  ".results."
     
 
     output_dir = directory

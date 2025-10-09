@@ -1,11 +1,10 @@
-import mlflow
+import re
 import torch
 import random
 from torch import nn
 from boed_experiment import BOEDExperiment
 from sourcemodel import SourceModel,SourceModel_Mis
 import gc
-from oed.primitives import compute_design
 
 
 def test_phase(model, test_x, true_theta, num_samples=100,misspecification_flag= False):
@@ -29,6 +28,7 @@ def test_phase(model, test_x, true_theta, num_samples=100,misspecification_flag=
     return generalization_error
 
 
+
 def single_run(
     p=2, 
     K=2, 
@@ -40,8 +40,8 @@ def single_run(
     alg_method="boed", 
     true_theta=None, 
     biased_sample_flag=False, 
-    misspecification_flag= False,
-    model_location = "",
+    run_id_tensors={},
+    misspecification_flag= False
     ):
     if not misspecification_flag:
         model = SourceModel(p=p, K=K, noise_scale=noise_scale)
@@ -66,27 +66,69 @@ def single_run(
 
     for round_idx in range(num_experiments):
         print(f"=== Round {round_idx} ===")
-
-        if alg_method == "boed" or alg_method == "boed_new":
+        if alg_method == "boed" or alg_method.startswith("boed_new"):
             best_x = experiment.optimize_design(xis, ys, model,alg_method)
             print(f"best_x:{best_x}")
-        elif alg_method == "random":
+        elif alg_method == "random" :
             if not biased_sample_flag: 
-                grid = torch.linspace(-4, 4, steps=int(8/0.1) + 1)  # [-4, ..., 4], step=0.1
-                best_x = grid[torch.randint(0, len(grid), (model.p,))]
-              
-                # best_x = (torch.round(torch.rand((1, model.p)) * 8 / 0.1) * 0.1 - 4)[0]
+                    best_x = (torch.round(torch.rand((1, model.p)) * 8 / 0.1) * 0.1 - 4)[0]
             else:
                 best_x = (torch.round(torch.rand((1, model.p)) * 3 / 0.1) * 0.1 - 4)[0]
-        elif alg_method == "dad":
-            ho_model = mlflow.pytorch.load_model(model_location)
-            with torch.no_grad():
-                best_x = compute_design(f"xi{round_idx}", ho_model.design_net.lazy(*zip(xis, ys)))
 
+        elif alg_method.startswith("db_boed"):
+            def parse_db_args(method: str):
+                     # default parameters
+                    db_args = {
+                        "tau": None,          # None → use data-adaptive quantile to set the threshold
+                        "lengthscale": 0.8,   # RBF kernel length scale
+                        "lam": 1e-2,          # KRR regularization coefficient
+                        "smooth_kappa": 1.0,  # κ for sigmoid smoothing (None → use hard threshold)
+                        "test": False,        # True: use the “oracle” g (if ground truth is available);
+                                            # False: fit g via kernel residual correction
+                        "steps": 500,
+                        "alpha": 1.0,
+                        "lambda": 0.0
+                    }
+
+                    # tau
+                    tau_match = re.search(r"tau_([0-9.]+)", method)
+                    if tau_match:
+                        db_args["tau"] = float(tau_match.group(1))
+
+                    # alpha
+                    alpha_match = re.search(r"alpha_([0-9.]+)", method)
+                    if alpha_match:
+                        db_args["alpha"] = float(alpha_match.group(1))
+
+                    # lambda
+                    lambda_match = re.search(r"lambda_([0-9.]+)", method)
+                    if lambda_match:
+                        db_args["lambda"] = float(lambda_match.group(1))
+
+                    # test (bool)
+                    test_match = re.search(r"test_(True|False)", method)
+                    if test_match:
+                        db_args["test"] = test_match.group(1) == "True"
+
+                    return db_args
+
+            db_args = parse_db_args(alg_method)
+      
+            print("tau.....111.",db_args["tau"])
+            if round_idx == 0:
+                #  select one point randomly or uniforml in the first round,.
+                grid = torch.linspace(-4, 4, steps=int(8/0.1) + 1)
+                best_x = grid[torch.randint(0, len(grid), (model.p,))]
+            else:
+                best_x = experiment.optimize_design(xis, ys, model, alg_method="db_boed", db_args=db_args)
+        
         if K == 1 and p == 1:
             best_x = best_x.unsqueeze(0)
 
+
         y = model.synthetic_data(best_x, true_theta)
+
+        print("best_x:",best_x)
         
         xis = torch.cat([xis, best_x.unsqueeze(0)])
         ys = torch.cat([ys, y.unsqueeze(-1)])
