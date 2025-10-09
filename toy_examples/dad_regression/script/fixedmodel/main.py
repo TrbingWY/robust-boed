@@ -1,8 +1,8 @@
 import torch
 from polynomial_model import PolynomialModel
 from boed_experiment import BOEDExperiment
-from utils import compute_covarite_shift
-from plotting import plot_generalization_error_vs_round,plot_covariet_shift_vs_round
+from utils import compute_wasserstein_dispersion,compute_covarite_shift,compute_mmd
+from plotting import plot_generalization_error_vs_round,plot_covariet_shift_vs_round,plot_rmse_vs_round
 import os,sys
 import matplotlib.pyplot as plt
 import pyro
@@ -13,10 +13,12 @@ from pyro.optim import Adam
 from pyro.infer import MCMC, NUTS
 import pandas as pd
 import gc
+import re
 import mlflow
 import mlflow.pytorch
 from oed.design import OED
 from oed.primitives import observation_sample, latent_sample, compute_design
+# from epig.epig_logprobs import epig_from_logprobs
 
 def test_phase(model, posterior_mean, posterior_sd, test_x,xis,ys, ax, round,misspecified_flag,PLOT):
     """
@@ -37,6 +39,7 @@ def test_phase(model, posterior_mean, posterior_sd, test_x,xis,ys, ax, round,mis
     mean_gen_error, mean_bias2, mean_variance, mean_cross = compute_error_decomposition(
     model, posterior_mean, test_x, barf_params=(-1.6720, 2.0000)
 )
+
 
     print(f"Decomposed Gen Error: {mean_gen_error:.2f} = Bias² {mean_bias2:.2f} + Variance {mean_variance:.2f} + Cross {2*mean_cross:.2f}")
 
@@ -132,9 +135,6 @@ def experiment(
 
         xis = torch.tensor([])  # Design points
         ys = torch.tensor([])   # Observations
-        if method[:3] == "dad":
-            y_outcomes = []
-            x_designs = []
 
         generalization_error[ex_idx,0], mean_bias2, mean_variance, mean_cross = test_phase(model, posterior_mean, posterior_sd, test_x, xis,ys, axes[0],0,misspecified_flag,PLOT)
         covarite_shift_degrees[ex_idx,0] = 0
@@ -163,19 +163,62 @@ def experiment(
                 best_x,_ = experiment.optimize_design(xis, ys, model)
             elif method.startswith("boed_lambda_"):
                 best_x,_ = experiment.optimize_design(xis, ys, model, float(method[len("boed_lambda_"):]))
-
+ 
             elif method == "random":
                 best_x = (torch.round(torch.rand((1)) * (8) / 0.1) * 0.1 - 4)
                 # best_x = torch.empty(1).uniform_(-4, 4)# np.random.uniform(0,1)
                 # best_x = best_x_box[round_idx-1].unsqueeze(-1)
 
-            elif method[:3] == "dad":
-                model_location = f"./mlruns/{experiment_id}/{run_id}/artifacts/model"
-                ho_model = mlflow.pytorch.load_model(model_location)
-                with torch.no_grad():
-                    best_x = compute_design(f"xi{round_idx}", ho_model.design_net.lazy(*zip(x_designs, y_outcomes)))
-                    best_x = torch.clamp(best_x, -4, 4)
+            elif method.startswith("db_boed"):
+                def parse_db_args(method: str):
+                    # default paras
+                    db_args = {
+                        "tau": None,
+                        "lengthscale": 0.8,
+                        "lam": 1e-2,
+                        "smooth_kappa": None,
+                        "test": False,
+                        "alpha": 1.0,
+                        "lambda": 0.0,
+                    }
+
+                    # tau
+                    tau_match = re.search(r"tau_([0-9.]+)", method)
+                    if tau_match:
+                        db_args["tau"] = float(tau_match.group(1))
+
+                    # alpha
+                    alpha_match = re.search(r"alpha_([0-9.]+)", method)
+                    if alpha_match:
+                        db_args["alpha"] = float(alpha_match.group(1))
+
+                    # lambda
+                    lambda_match = re.search(r"lambda_([0-9.]+)", method)
+                    if lambda_match:
+                        db_args["lambda"] = float(lambda_match.group(1))
+
+                    # test (布尔型)
+                    test_match = re.search(r"test_(True|False)", method)
+                    if test_match:
+                        db_args["test"] = test_match.group(1) == "True"
+
+                    return db_args
+
+                db_args = parse_db_args(method)
+                TEST = db_args.get("test")
+                LAMBDA = db_args.get("lambda")
+
+                if round_idx == 1:
+                    if TEST:
+                        label = label + "_oracle"
+                    
+                if round_idx == 1:
+                    best_x = (torch.round(torch.rand((1)) * (8) / 0.1) * 0.1 - 4)
+                    
+                else:
+                    best_x, _ = experiment.optimize_design(xis, ys, model,LAMBDA = LAMBDA ,db_args=db_args) 
                 
+
             else:
                 print(f"the method is: {method}")
                 print("check the method again!")
@@ -185,17 +228,19 @@ def experiment(
             
             # Generate synthetic observation
             y = model.synthetic_data(best_x)
-            if method[:3] == "dad":
-                best_x = best_x.unsqueeze(-1)
-                y = y.unsqueeze(-1)
-                y_outcomes.append(y)
-                x_designs.append(best_x)
             xis = torch.cat([xis, best_x])
             ys = torch.cat([ys, y])
 
 
             # Infer posterior
+            # posterior_mean, posterior_sd = experiment.run_svi(xis, ys)
             posterior_mean, posterior_sd = experiment.run_mcmc(xis, ys)
+
+
+            # Compute RMSE
+            # rmse = model.compute_rmse(posterior_mean, TRUE_BETA)
+            # rmse_values[round_idx] = rmse
+            # print(f"Round {round_idx+1}, RMSE: {rmse}")
 
             
             generalization_error[ex_idx,round_idx], mean_bias2, mean_variance, mean_cross = test_phase(model, posterior_mean, posterior_sd, test_x, xis,ys, axes[round_idx],round_idx,misspecified_flag, PLOT)
@@ -218,20 +263,39 @@ def experiment(
             run_df["mean_cross"] = mean_cross
             output.append(run_df)
         
-            
+                # 释放 PyTorch 计算图
         torch.cuda.empty_cache()
 
+        print("xis",xis)
+        print("sort_xis", torch.sort(xis))
         # delte
         if num_ex != 1:
             del model, experiment
             del xis, ys
             del posterior_mean, posterior_sd
             gc.collect()  
+
     save_path = dir + label + '.csv'
     res = pd.concat(output)
     res.to_csv(save_path, index=False)
     print("res save to", save_path)
             
+
+    if num_ex == 1:
+        # Hide empty subplots if any, if num_ex plot the fitting curves
+        for j in range(num_rounds, len(axes)):
+            axes[j].axis('off')
+        
+        plt.tight_layout()
+        plt.show()
+        if not misspecified_flag:
+            plt.savefig(experiment.dir + method+"well_fit.png")
+            label = method +"_well"
+            print(f"plot save to {experiment.dir}{method} well_fit.png")
+        else:
+            plt.savefig(experiment.dir + method + "mis_fit.png")
+            label = method +"_mis"
+            print(f"plot save to {experiment.dir}{method} mis_fit.png")
 
     return generalization_error,rmse_values, label, covarite_shift_degrees
 
@@ -241,14 +305,25 @@ if __name__ == "__main__":
     # Initialize model and experiment
     # seed 42, 2023, 2024, 777
  
-    # orginal compare 
-    # need to add the trained dad network in the for loop, about the line 275.
-    method_box = ["random","random","boed","boed","dad","dad"]
-    misspecified_flag_box = [False,2,False,2,False,2]
-    output_dir = "../../results/test05/result42_final/"
+    # orginal compare
+    method_box = ["random","random","boed","boed"]
+    misspecified_flag_box = [False,2,False,2]
+    output_dir = "../../results/"
+
+    method_box = ["random","random","boed_lambda_0.25","boed_lambda_1", "boed_lambda_0.5"]
+    misspecified_flag_box = [False,2,2,2,2]
 
 
+    # # test the new method
+    method_box = ["boed_lambda_0.25","boed_lambda_1", "boed_lambda_0.5"]
+    misspecified_flag_box = [False,False,False]
 
+
+    method_box = ["db_boed_mis_2_alpha_10.0","db_boed_mis_2_alpha_20.0","db_boed_mis_2_alpha_1.0_tau_10.0","db_boed_mis_2_alpha_1.0_tau_5.0"]
+    misspecified_flag_box = [2,2,2,2]
+
+    method_box = ["db_boed_lambda_1","db_boed_lambda_1_tau_5"]
+    misspecified_flag_box = [2,2]
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -264,19 +339,10 @@ if __name__ == "__main__":
 
     for i, (method, misspecified_flag) in enumerate(zip(method_box, misspecified_flag_box)):
         print("============================")
-        print(method+ str(misspecified_flag))
-        if method == "dad":
-            if not misspecified_flag:
-                experiment_id =""
-                run_id = ""  # the wellspecified model directory
-            else: # misspecified = True
-                experiment_id =""
-                run_id = "" # the misspecified model directory; 
-                
-        else:
-            experiment_id =""
-            run_id = ""
-            exit()
+        print(method+"; misspecified_flag:"+ str(misspecified_flag))
+
+        experiment_id =""
+        run_id = ""
         generalization_error, rmse_values_mis, label, covarite_shift_degree= experiment(method = method, 
                                                                  misspecified_flag = misspecified_flag, eig_method = "svi_eig", 
                                                                  num_rounds=10,
@@ -293,3 +359,4 @@ if __name__ == "__main__":
 
     plot_generalization_error_vs_round(output_dir,generalization_errors,labels)
     plot_covariet_shift_vs_round(output_dir,covarite_shift_degrees, labels)
+
