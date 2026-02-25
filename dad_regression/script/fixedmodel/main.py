@@ -108,7 +108,7 @@ def experiment(
             model = PolynomialModel(degree=2,TRUE_BETA = torch.tensor([1.0, 2.0, -0.5]))
             label = method +"_well"
         else:
-            true_beta = torch.tensor([1.0, 2.0, -0.5,-5.0,6,9])[:misspecified_flag+1]
+            true_beta = torch.tensor([1.0, 2.0, -0.5,0.2,6,9])[:misspecified_flag+1]
             model = PolynomialModel(degree=1,TRUE_BETA = true_beta,BEST_BETA = true_beta)
             label = method +"_mis_" + str(misspecified_flag)
 
@@ -116,7 +116,11 @@ def experiment(
 
 
         posterior_mean = model.prior_mean
-        posterior_sd = model.prior_sd
+        if hasattr(model, "prior_scale_tril"):
+            L0 = model.prior_scale_tril
+            posterior_sd = L0 @ L0.T
+        else:
+            posterior_sd = model.prior_cov
         pyro.clear_param_store()
         if seed >= 0:
             pyro.set_rng_seed(seed+ ex_idx*10)
@@ -221,6 +225,7 @@ def experiment(
             print("best_x",best_x)
             
             # Generate synthetic observation
+            best_x = best_x.unsqueeze(-1)
             y = model.synthetic_data(best_x)
             xis = torch.cat([xis, best_x])
             ys = torch.cat([ys, y])
@@ -228,7 +233,7 @@ def experiment(
 
             # Infer posterior
             # posterior_mean, posterior_sd = experiment.run_svi(xis, ys)
-            posterior_mean, posterior_sd = experiment.run_mcmc(xis, ys)
+            posterior_mean, posterior_cov = experiment.run_mcmc(xis, ys)
 
 
             # Compute RMSE
@@ -241,7 +246,14 @@ def experiment(
             covarite_shift_degrees[ex_idx,round_idx] = compute_covarite_shift(xis,covarite_shift_method = covarite_shift_method)
             # update the para of model
             model.prior_mean = posterior_mean
-            model.prior_sd = posterior_sd
+            # model.prior_sd = posterior_sd
+            # model.prior_mean = posterior_mean
+     
+            eps = 1e-10
+            cov_pd = posterior_cov.clone()
+            cov_pd = cov_pd + eps * torch.eye(cov_pd.shape[0], dtype=cov_pd.dtype, device=cov_pd.device)
+            L_next = torch.linalg.cholesky(cov_pd)
+            model.prior_scale_tril = L_next
 
             run_df = pd.DataFrame(best_x.numpy())
             run_df.columns = ["xi"]
@@ -266,7 +278,7 @@ def experiment(
         if num_ex != 1:
             del model, experiment
             del xis, ys
-            del posterior_mean, posterior_sd
+            del posterior_mean, posterior_sd,posterior_cov
             gc.collect()  
 
     save_path = dir + label + '.csv'
@@ -302,7 +314,7 @@ if __name__ == "__main__":
     # orginal compare
     method_box = ["random","random","boed","boed"]
     misspecified_flag_box = [False,2,False,2]
-    output_dir = "../../results/"
+    output_dir = "../results/"
 
     method_box = ["random","random","boed_lambda_0.25","boed_lambda_1", "boed_lambda_0.5"]
     misspecified_flag_box = [False,2,2,2,2]
@@ -318,6 +330,18 @@ if __name__ == "__main__":
 
     method_box = ["db_boed_lambda_1","db_boed_lambda_1_tau_5"]
     misspecified_flag_box = [2,2]
+
+    method_box = ["random","boed_lambda_0.25","boed_lambda_1", "boed_lambda_0.5","boed"]
+    misspecified_flag_box = [3,3,3,3,3]
+    output_dir = "../../results/mis3/overall/"
+
+    method_box = ["db_boed_lambda_1_tau_2","db_boed_lambda_0.5_tau_2","db_boed_lambda_0.25_tau_2",
+                  "db_boed_lambda_1_tau_5","db_boed_lambda_0.5_tau_5","db_boed_lambda_0.25_tau_5",
+                  "db_boed_lambda_1_tau_10","db_boed_lambda_0.5_tau_10","db_boed_lambda_0.25_tau_10"]
+    misspecified_flag_box = [3,3,3,
+                             3,3,3,
+                             3,3,3]
+    output_dir = "../../results/mis3/tau/"
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

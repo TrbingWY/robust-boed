@@ -163,24 +163,163 @@ def read_files(directory):
 
     return base_paths, labels
 
+def compare_different_mis(
+    mis_dirs: dict,
+    output_path: str,
+    mis_levels=(0, 1, 2),
+    random_prefix: str = "random",
+    ridea_prefix: str = "db_boed",   # R-IDeA
+    bad_prefix: str = "boed",        # BAD / R-I
+    ratio_mode: str = "random_over_method",  # or "method_over_random"
+    normalize_to_no_mis: bool = True,
+    show_center_line: bool = True,   # center line uses median
+):
+    """
+    Plot ratio bounds across misspecification levels with min-max band (no averaging).
+
+    ratio_mode:
+        - "random_over_method":  ratio = Random / Method  (larger is better)
+        - "method_over_random":  ratio = Method / Random  (smaller is better)
+    """
+
+    def find_csv(directory, prefix):
+        files = [f for f in os.listdir(directory) if f.lower().endswith(".csv")]
+        matches = [f for f in files if f.lower().startswith(prefix.lower())]
+        if len(matches) == 0:
+            raise FileNotFoundError(f"No file starting with '{prefix}' in {directory}")
+        matches = sorted(matches)
+        return os.path.join(directory, matches[0])
+
+    def final_round_values(csv_path):
+        G, _ = read_csv(csv_path)   # reuse your existing function
+        G = G.squeeze()
+        if G.ndim == 1:
+            vals = G
+        else:
+            vals = G[..., -1]       # last round per ex
+        return vals.detach().cpu().numpy()
+
+    # enforce x-axis only has [0,1,2]
+    mis_levels = list(mis_levels)
+    for m in mis_levels:
+        if m not in mis_dirs:
+            raise KeyError(f"mis_dirs missing key {m}. Provided keys: {sorted(mis_dirs.keys())}")
+
+    if ratio_mode not in ("random_over_method", "method_over_random"):
+        raise ValueError("ratio_mode must be 'random_over_method' or 'method_over_random'")
+
+    x = np.array(mis_levels, dtype=float)
+
+    ratio_ridea_list = []
+    ratio_bad_list = []
+
+    for mis in mis_levels:
+        d = mis_dirs[mis]
+
+        random_csv = find_csv(d, random_prefix)
+        ridea_csv  = find_csv(d, ridea_prefix)
+        bad_csv    = find_csv(d, bad_prefix)
+
+        r = final_round_values(random_csv)
+        i = final_round_values(ridea_csv)
+        b = final_round_values(bad_csv)
+
+        n = min(len(r), len(i), len(b))
+        r, i, b = r[:n], i[:n], b[:n]
+
+        if ratio_mode == "random_over_method":
+            ratio_ridea = r / (i + 1e-12)
+            ratio_bad   = r / (b + 1e-12)
+            label_ridea = "Random / R-IDeA"
+            label_bad   = "Random / BAD"
+            ylabel = "Generalization error ratio"
+        else:
+            ratio_ridea = i / (r + 1e-12)
+            ratio_bad   = b / (r + 1e-12)
+            label_ridea = "R-IDeA / Random"
+            label_bad   = "BAD / Random"
+            ylabel = "Generalization error ratio"
+
+        ratio_ridea_list.append(ratio_ridea)
+        ratio_bad_list.append(ratio_bad)
+
+        print(f"[mis={mis}] n_ex={n}  "
+              f"R-IDeA ratio min={ratio_ridea.min():.3f} max={ratio_ridea.max():.3f}  "
+              f"BAD ratio min={ratio_bad.min():.3f} max={ratio_bad.max():.3f}")
+
+    # normalize so that mis=0 center is 1 (using median, not mean)
+    if normalize_to_no_mis:
+        idx0 = mis_levels.index(0)
+        base_ridea = np.median(ratio_ridea_list[idx0])
+        base_bad   = np.median(ratio_bad_list[idx0])
+
+        ratio_ridea_list = [arr / (base_ridea + 1e-12) for arr in ratio_ridea_list]
+        ratio_bad_list   = [arr / (base_bad + 1e-12) for arr in ratio_bad_list]
+
+    # 计算 bounds
+    def bounds_and_center(arr_list):
+        lowers = np.array([np.min(a) for a in arr_list], dtype=float)
+        uppers = np.array([np.max(a) for a in arr_list], dtype=float)
+        centers = np.array([np.median(a) for a in arr_list], dtype=float)
+
+        lower_err = centers - lowers
+        upper_err = uppers - centers
+        yerr = np.vstack([lower_err, upper_err])
+
+        return centers, yerr
+
+    med_i, yerr_i = bounds_and_center(ratio_ridea_list)
+    med_b, yerr_b = bounds_and_center(ratio_bad_list)
+
+    # ---- Plot ----
+    plt.figure(figsize=(8, 6))
+
+    plt.errorbar(
+        x, med_i, yerr=yerr_i,
+        fmt='o', capsize=6, 
+        elinewidth=2,
+        markersize=8,
+        label=label_ridea
+    )
+
+    plt.errorbar(
+        x, med_b, yerr=yerr_b,
+        fmt='s', capsize=6,
+        elinewidth=2,
+        markersize=8,
+        label=label_bad
+    )
+
+    plt.axhline(1.0, linestyle='--', linewidth=1)
+
+    plt.xticks(x, [str(int(v)) for v in x], fontsize=16)
+    plt.xlabel("Degree of misspecification", fontsize=18)
+    plt.ylabel("Generalization error ratio", fontsize=18)
+    plt.title("Generalization error ratio vs. misspecification", fontsize=18)
+
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.legend(fontsize=14)
+
+    plt.tight_layout(rect=[0.05, 0.05, 1, 0.95])
+    plt.savefig(output_path, dpi=300)
 
 if __name__ == "__main__":
 
     directory = "./toy_examples/dad_regression/results/test05/result42_final/"
 
-    directory = "./toy_examples/dad_regression/results/test05/result42_final/"
+    directory = "/mnt/iusers01/sk01/j43716rt/scratch/projects/robust-boed/dad_regression/results/mis3/tau/lambda1/"
     output_dir = directory
 
     csv_files = sorted(
         # [f for f in os.listdir(directory) if f.endswith('.csv')],
         [
         f for f in os.listdir(directory)
-        if f.endswith('.csv') and 'well' not in f and 'lambda' not in f
+        if f.endswith('.csv') and 'well' not in f
         ],
-        key=lambda f: (
-            ['random', 'boed', 'dad'].index(next((x for x in ['random', 'boed', 'dad'] if x in f), 'zzz')),
-            1 if '_mis' in f else 0
-        )
+        # key=lambda f: (
+        #     ['random', 'boed', 'dad'].index(next((x for x in ['random', 'boed', 'dad'] if x in f), 'zzz')),
+        #     1 if '_mis' in f else 0
+        # )
         #   key=lambda f: (
         #     ['random', 'boed_mis', 'dad','1_mis','0.5_mis','0.25_mis'].index(next((x for x in ['random', 'boed_mis', 'dad','1_mis','0.5_mis','0.25_mis'] if x in f), 'zzz')),
         #     1 if '_mis' in f else 0
@@ -224,4 +363,19 @@ if __name__ == "__main__":
     # print(font_prop.get_name())
     plot_generalization_error_vs_round(output_dir,generalization_errors,labels)
     plot_covariet_shift_vs_round(output_dir,covarite_shift_degrees, labels,method = "mmd") # this covariate shift is in the files instead of computing mmd/wass by xi
+
+    mis_dirs = {
+    0: "./compare/well/",
+    1: "./compare/mis2/",
+    2: "./dad_regression/results/test05/result42_final_v5/newMethod/compare/mis3/",
+    }
+
+    compare_different_mis(
+        mis_dirs=mis_dirs,
+        output_path="./compare/ratio_vs_mis.png",
+        ratio_mode="method_over_random",  #random_over_method;method_over_random
+        mis_levels=(0, 1, 2),
+    )
+
+
   

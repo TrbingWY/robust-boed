@@ -15,10 +15,6 @@ source dad_code/bin/activate
 1. Install the remaining package requirements using `pip install -r requirements.txt`.
 1. Install the pyro at [https://github.com/pyro-ppl/pyro](https://github.com/pyro-ppl/pyro)
 
-## MLFlow
-We use `mlflow` to log metric and store network parameters. Each experiment run is stored in
-a directory `mlruns` which will be created automatically. Each experiment is assigned a
-numerical `<ID>` and each run gets a unique `<HASH>`.
 
 ## Experiment: Toy Example
 

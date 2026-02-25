@@ -60,6 +60,8 @@ class BOEDExperiment:
                 div_ori = compute_mmd_dispersion(xis)
 
             # compute the mmd dispersion changed
+            if xis.ndim > 1:
+                xis= xis.squeeze(-1)
             new_designs = torch.cat([xis.repeat(self.candidate_designs.size(0), 1), self.candidate_designs], dim=1)
             div_new = torch.tensor([compute_mmd_dispersion(design) for design in new_designs])
             div = div_new / div_ori
@@ -133,10 +135,14 @@ class BOEDExperiment:
             svi.step(xis)
         
         posterior_mean = pyro.param("posterior_mean").detach()
-        posterior_sd = pyro.param("posterior_sd").detach()
-        return posterior_mean, posterior_sd
+        # posterior_sd = pyro.param("posterior_sd").detach()
+        # return posterior_mean, posterior_sd
+        L = pyro.param("posterior_scale_tril").detach()   # 下三角
+        posterior_cov = L @ L.T                           # 协方差矩阵
+        return posterior_mean, posterior_cov
     
     def run_mcmc(self, xis, ys):
+        pyro.clear_param_store()
         self.model.reset()
         conditioned_model = pyro.condition(self.model.make_model(), data={"y": ys})
         nuts_kernel = NUTS(conditioned_model)
@@ -145,11 +151,16 @@ class BOEDExperiment:
         # Extract samples
         posterior_samples = mcmc.get_samples()
         beta = posterior_samples["beta"]
-
         posterior_mean = beta.mean(dim =0)
-        posterior_sig = beta.std(dim=0)
+        # L = beta.std(dim =0)
+        # posterior_cov = L @ L.T
+        # posterior_cov = beta.std(dim =0)
+        # --- ---
+        X = beta - posterior_mean
+        n = X.size(0)
+        cov = (X.T @ X) / (n - 1)  
 
-        return posterior_mean,posterior_sig+ 1e-5
+        return posterior_mean,cov
 
 
 
