@@ -66,7 +66,7 @@ class BOEDExperiment:
                 div_ori = compute_mmd_dispersion(xis)
 
             # compute the mmd dispersion changed
-            new_designs = torch.cat([xis.reshape(-1).repeat(self.candidate_designs.size(0), 1), self.candidate_designs], dim=1)
+            new_designs = torch.cat([xis.reshape(-1).repeat(candidate_designs.size(0), 1), candidate_designs], dim=1)
             div = torch.tensor([compute_mmd_dispersion(design) for design in new_designs]) / div_ori
             if alg_method == "boed_new_025":
                 eig = eig * (1- 0.25 * div)
@@ -88,7 +88,7 @@ class BOEDExperiment:
             smooth_kappa = db_args.get("smooth_kappa", 0.25)
             mmd_lambda   = db_args.get("lambda", 0.0)    # when >0,add the MMD penalty
 
-            print("tau......",tau)
+            # print("tau......",tau)
             # 1) g has the same model structure with thef: g：g(x)=forward_map(x, theta_g)
             g_mean_fn = fit_g_mle_with_margin_like_model(
                 xis, ys, current_model, 

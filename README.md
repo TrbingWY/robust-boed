@@ -63,9 +63,8 @@ The pk_method have "boed", "random", and new method,like "db_boed_lambda_0.5_tau
 python3 toy_examples/pk/scripts/main.py \
     --pk_method "boed" \
     --grids_num 200 \
-    --noise_scale 0.1 \
-    --num_experiments 30 \
-    --num_parallel 1 \
+    --num_experiments 10 \
+    --num_parallel 20 \
     --misspecification_flag False
 ```
 
